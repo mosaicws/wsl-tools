@@ -95,10 +95,10 @@ op_create_user() {
     local default_user
     default_user=$(find_normal_user)
     if [ -n "$default_user" ]; then
-        read -rp "Switch to '$default_user' and relaunch menu? [Y/n] " switch_user < "$TTY_IN"
+        read -rp "Switch to '$default_user'? [Y/n] " switch_user < "$TTY_IN"
         if [[ ! "$switch_user" =~ ^[Nn]$ ]]; then
             info "Switching to '$default_user'..."
-            exec su - "$default_user" -c "bash /tmp/wsl-tools.sh" < "$TTY_IN"
+            exec su - "$default_user"
         fi
     fi
 }
