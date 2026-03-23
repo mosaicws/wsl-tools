@@ -31,6 +31,7 @@ if ! command -v whiptail &>/dev/null; then
     info "Installing whiptail..."
     apt-get update -qq && apt-get install -y -qq whiptail 2>/dev/null \
         || { sudo apt-get update -qq && sudo apt-get install -y -qq whiptail; }
+    command -v whiptail &>/dev/null || { error "Failed to install whiptail."; exit 1; }
 fi
 
 download_script() {
@@ -149,7 +150,7 @@ op_test_ssh() {
         echo ""
         if command -v ssh &>/dev/null; then
             info "Testing GitHub connection..."
-            ssh -i "$ssh_home/.ssh/id_ed25519" -T git@github.com 2>&1 || true
+            ssh -o StrictHostKeyChecking=accept-new -i "$ssh_home/.ssh/id_ed25519" -T git@github.com 2>&1 || true
         else
             warn "openssh-client not installed — install it to test SSH connections."
         fi
@@ -176,8 +177,8 @@ op_system_info() {
     echo "── SSH ─────────────────────────────────────────────"
     local ssh_home="$HOME"
     if [ "$(id -u)" -eq 0 ]; then
-        local su; su=$(find_normal_user)
-        [ -n "$su" ] && ssh_home=$(getent passwd "$su" | cut -d: -f6)
+        local nu; nu=$(find_normal_user)
+        [ -n "$nu" ] && ssh_home=$(getent passwd "$nu" | cut -d: -f6)
     fi
     if [ -f "$ssh_home/.ssh/id_ed25519.pub" ]; then
         ssh-keygen -lf "$ssh_home/.ssh/id_ed25519.pub" 2>/dev/null | sed 's/^/  /'

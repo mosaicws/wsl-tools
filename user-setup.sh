@@ -34,9 +34,9 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
 fi
 
 echo ""
-echo "╔══════════════════════════════════════════════════════╗"
-echo "║     WSL2 User Setup                                  ║"
-echo "╚══════════════════════════════════════════════════════╝"
+echo "╔════════════════════════════════════════╗"
+echo "║          WSL2 User Setup              ║"
+echo "╚════════════════════════════════════════╝"
 echo ""
 
 read -rp "Enter username to create: " username < "$TTY_IN"
@@ -113,7 +113,7 @@ if command -v wsl.exe &>/dev/null; then
 else
     warn "Windows interop not available in this session."
     echo "  Restart WSL, then run:"
-    echo "  curl -fsSL $REPO_RAW/ssh-import.sh -o /tmp/ssh-import.sh && bash /tmp/ssh-import.sh"
+    echo "  curl -fsSL $REPO_RAW/ssh-import.sh | bash"
 fi
 
 # Switch to new user (only when run standalone, not from wsl-tools menu)

@@ -86,7 +86,7 @@ while IFS= read -r distro <&3; do
     fi
 
     echo -n "  Checking $distro... " >&2
-    pub=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r') || true
+    pub=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" < /dev/null 2>/dev/null | tr -d '\r') || true
     if [ -n "$pub" ]; then
         candidates+=("$distro")
         comment=$(echo "$pub" | awk '{print $3}')
@@ -143,10 +143,10 @@ fi
 # Copy keys via temp files to avoid truncating existing keys on failure
 info "Copying SSH keys from $selected..."
 copy_remote_file() {
-    local remote_path="$1" local_path="$2" perms="$3"
+    local distro="$1" remote_path="$2" local_path="$3" perms="$4"
     local tmp
     tmp=$(mktemp "$SSH_DIR/.tmp.XXXXXX")
-    if wsl.exe -d "$selected" -- cat "$remote_path" < /dev/null 2>/dev/null | tr -d '\r' > "$tmp" && [ -s "$tmp" ]; then
+    if wsl.exe -d "$distro" -- cat "$remote_path" < /dev/null 2>/dev/null | tr -d '\r' > "$tmp" && [ -s "$tmp" ]; then
         mv "$tmp" "$local_path"
         chmod "$perms" "$local_path"
     else
@@ -155,9 +155,9 @@ copy_remote_file() {
     fi
 }
 
-copy_remote_file "/home/$USER/.ssh/id_ed25519" "$SSH_KEY" 600
-copy_remote_file "/home/$USER/.ssh/id_ed25519.pub" "$SSH_KEY.pub" 644 || true
-copy_remote_file "/home/$USER/.ssh/known_hosts" "$SSH_DIR/known_hosts" 644 || true
+copy_remote_file "$selected" "/home/$USER/.ssh/id_ed25519" "$SSH_KEY" 600
+copy_remote_file "$selected" "/home/$USER/.ssh/id_ed25519.pub" "$SSH_KEY.pub" 644 || true
+copy_remote_file "$selected" "/home/$USER/.ssh/known_hosts" "$SSH_DIR/known_hosts" 644 || true
 
 if [ ! -f "$SSH_DIR/config" ]; then
     cat > "$SSH_DIR/config" << 'SSHCONFIG'
@@ -177,6 +177,6 @@ ssh-keygen -lf "$SSH_KEY.pub" 2>/dev/null || true
 echo ""
 if command -v ssh &>/dev/null; then
     info "Testing GitHub connection..."
-    ssh -T git@github.com 2>&1 | head -1 || true
+    ssh -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 | head -1 || true
 fi
 echo ""
