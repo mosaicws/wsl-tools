@@ -62,9 +62,14 @@ find_normal_user() {
 # ── Menu ─────────────────────────────────────────────────────
 
 show_menu() {
-    local ssh_status="not found" user_status="root"
-    [ -f "$HOME/.ssh/id_ed25519" ] && ssh_status="configured"
-    [ "$(id -u)" -ne 0 ] && user_status="$(whoami)"
+    local ssh_status="not found" user_status="root" ssh_home="$HOME"
+    if [ "$(id -u)" -eq 0 ]; then
+        local nu; nu=$(find_normal_user)
+        [ -n "$nu" ] && { user_status="$nu"; ssh_home=$(eval echo "~$nu"); }
+    else
+        user_status="$(whoami)"
+    fi
+    [ -f "$ssh_home/.ssh/id_ed25519" ] && ssh_status="configured"
 
     whiptail --title "WSL Tools" \
         --menu "Current: user=$user_status | ssh=$ssh_status\n\nSelect an operation:" \
@@ -128,16 +133,23 @@ op_import_ssh() {
 }
 
 op_test_ssh() {
+    local ssh_home="$HOME"
+    if [ "$(id -u)" -eq 0 ]; then
+        local target_user
+        target_user=$(find_normal_user)
+        [ -n "$target_user" ] && ssh_home=$(eval echo "~$target_user")
+    fi
+
     echo ""
-    if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
-        error "No SSH key found at ~/.ssh/id_ed25519"
+    if [ ! -f "$ssh_home/.ssh/id_ed25519" ]; then
+        error "No SSH key found at $ssh_home/.ssh/id_ed25519"
     else
         info "Key fingerprint:"
-        ssh-keygen -lf "$HOME/.ssh/id_ed25519.pub" 2>/dev/null || true
+        ssh-keygen -lf "$ssh_home/.ssh/id_ed25519.pub" 2>/dev/null || true
         echo ""
         if command -v ssh &>/dev/null; then
             info "Testing GitHub connection..."
-            ssh -T git@github.com 2>&1 || true
+            ssh -i "$ssh_home/.ssh/id_ed25519" -T git@github.com 2>&1 || true
         else
             warn "openssh-client not installed — install it to test SSH connections."
         fi
