@@ -129,19 +129,10 @@ echo "Public key: $pub_key"
 echo "Target:     $SSH_DIR/"
 echo ""
 
-if command -v whiptail &>/dev/null; then
-    whiptail --title "Confirm Import" \
-        --yesno "Import SSH keys from $selected?\n\n$pub_key\n\nFiles will be copied to $SSH_DIR/" \
-        12 78 || {
-        warn "Import cancelled."
-        exit 1
-    }
-else
-    read -rp "Proceed? [Y/n] " confirm < /dev/tty
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
-        warn "Import cancelled."
-        exit 1
-    fi
+read -rp "Proceed? [Y/n] " confirm < /dev/tty
+if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    warn "Import cancelled."
+    exit 1
 fi
 
 # ── Copy keys ────────────────────────────────────────────────
