@@ -49,9 +49,9 @@ if ! command -v wsl.exe &>/dev/null; then
     exit 1
 fi
 
-if ! wsl.exe --status &>/dev/null; then
+if ! wsl.exe --status < /dev/null &>/dev/null; then
     fix_interop
-    if ! wsl.exe --status &>/dev/null; then
+    if ! wsl.exe --status < /dev/null &>/dev/null; then
         error "wsl.exe cannot execute (Windows interop not active)."
         echo ""
         echo "  Try: sudo sh -c 'echo :WSLInterop:M::MZ::/init:PF > /proc/sys/fs/binfmt_misc/register'"
@@ -65,7 +65,7 @@ fi
 info "Scanning WSL instances for SSH keys..."
 
 # Strip null bytes (UTF-16LE→ASCII), BOM bytes, and carriage returns — handles both encodings
-all_distros=$(wsl.exe -l -q 2>/dev/null | tr -d '\r\0\377\376' | sed '/^$/d') || true
+all_distros=$(wsl.exe -l -q < /dev/null 2>/dev/null | tr -d '\r\0\377\376' | sed '/^$/d') || true
 
 if [ -z "$all_distros" ]; then
     error "Could not list WSL distributions."

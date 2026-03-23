@@ -120,5 +120,5 @@ fi
 if [ -z "${WSL_TOOLS_MENU:-}" ]; then
     echo ""
     info "Switching to '$username'..."
-    exec su - "$username"
+    exec su - "$username" < "$TTY_IN"
 fi

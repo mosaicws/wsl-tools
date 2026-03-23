@@ -98,7 +98,7 @@ op_create_user() {
         read -rp "Switch to '$default_user'? [Y/n] " switch_user < "$TTY_IN"
         if [[ ! "$switch_user" =~ ^[Nn]$ ]]; then
             info "Switching to '$default_user'..."
-            exec su - "$default_user"
+            exec su - "$default_user" < "$TTY_IN"
         fi
     fi
 }
