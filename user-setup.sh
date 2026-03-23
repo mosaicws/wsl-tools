@@ -107,18 +107,33 @@ default=$username
 EOF
 fi
 
-# ── Summary ──────────────────────────────────────────────────
+# Ensure shell starts in home directory (not /mnt/c/Users/...)
+if ! grep -q 'cd ~' "/home/$username/.bashrc" 2>/dev/null; then
+    cat >> "/home/$username/.bashrc" << 'BASHRC'
+
+# Start in home directory (not Windows mount)
+if [ "$(pwd)" = "/" ] || echo "$(pwd)" | grep -q '^/mnt/'; then
+    cd ~
+fi
+BASHRC
+    chown "$username:$username" "/home/$username/.bashrc"
+fi
+
+# ── Shutdown ─────────────────────────────────────────────────
+
+distro_name="${WSL_DISTRO_NAME:-}"
 
 echo ""
 info "User '$username' is ready."
 echo ""
-echo "  To start using it, close this terminal and restart the WSL instance:"
-echo ""
-echo "    wsl --terminate ${WSL_DISTRO_NAME:-<distro-name>}"
-echo "    wsl -d ${WSL_DISTRO_NAME:-<distro-name>}"
-echo ""
-echo "  You will log in as '$username' automatically."
-echo ""
-echo "  Next step — import SSH keys:"
+echo "  Next step after restart — import SSH keys:"
 echo "    curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh | bash"
 echo ""
+
+if [ -n "$distro_name" ]; then
+    info "Shutting down in 5 seconds... (reopen with: wsl -d $distro_name)"
+    sleep 5
+    wsl.exe --terminate "$distro_name"
+else
+    info "Close this terminal and restart the WSL instance to log in as '$username'."
+fi
