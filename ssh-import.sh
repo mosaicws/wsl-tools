@@ -37,13 +37,22 @@ fi
 
 if ! command -v wsl.exe &>/dev/null; then
     error "wsl.exe not available. Windows interop may be disabled in /etc/wsl.conf"
+    echo "  If you just ran user-setup, restart WSL first:"
+    echo "  1. Exit (type 'exit')"
+    echo "  2. From PowerShell: wsl --terminate ${WSL_DISTRO_NAME:-<distro>}"
+    echo "  3. Reopen: wsl -d ${WSL_DISTRO_NAME:-<distro>}"
     exit 1
 fi
 
 info "Scanning WSL instances for SSH keys..."
 
-# Get distro list once, detect current distro
-all_distros=$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 | tr -d '\r' | sed '/^$/d')
+# Get distro list — wsl.exe outputs UTF-16LE, convert if iconv is available
+all_distros=$(wsl.exe -l -q 2>/dev/null | { iconv -f UTF-16LE -t UTF-8 2>/dev/null || cat; } | tr -d '\r\0' | sed '/^$/d') || true
+
+if [ -z "$all_distros" ]; then
+    error "Could not list WSL distributions."
+    exit 1
+fi
 current_distro="${WSL_DISTRO_NAME:-$(echo "$all_distros" | head -1)}"
 
 candidates=()
