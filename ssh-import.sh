@@ -35,22 +35,38 @@ if [ -f "$SSH_KEY" ]; then
     fi
 fi
 
+restart_msg() {
+    local distro="${WSL_DISTRO_NAME:-<distro>}"
+    echo ""
+    echo "  This usually means WSL needs a restart to enable Windows interop."
+    echo "  From PowerShell, run:"
+    echo "    wsl --terminate $distro"
+    echo "    wsl -d $distro"
+    echo "  Then re-run this script."
+}
+
+# Check wsl.exe is in PATH
 if ! command -v wsl.exe &>/dev/null; then
-    error "wsl.exe not available. Windows interop may be disabled in /etc/wsl.conf"
-    echo "  If you just ran user-setup, restart WSL first:"
-    echo "  1. Exit (type 'exit')"
-    echo "  2. From PowerShell: wsl --terminate ${WSL_DISTRO_NAME:-<distro>}"
-    echo "  3. Reopen: wsl -d ${WSL_DISTRO_NAME:-<distro>}"
+    error "wsl.exe not found in PATH."
+    restart_msg
+    exit 1
+fi
+
+# Check wsl.exe actually executes (binfmt_misc requires systemd)
+if ! wsl.exe --status &>/dev/null; then
+    error "wsl.exe cannot execute (systemd/binfmt_misc may not be active)."
+    restart_msg
     exit 1
 fi
 
 info "Scanning WSL instances for SSH keys..."
 
-# Get distro list — wsl.exe outputs UTF-16LE, convert if iconv is available
+# wsl.exe outputs UTF-16LE on some Windows builds, UTF-8 on others
 all_distros=$(wsl.exe -l -q 2>/dev/null | { iconv -f UTF-16LE -t UTF-8 2>/dev/null || cat; } | tr -d '\r\0' | sed '/^$/d') || true
 
 if [ -z "$all_distros" ]; then
     error "Could not list WSL distributions."
+    restart_msg
     exit 1
 fi
 current_distro="${WSL_DISTRO_NAME:-$(echo "$all_distros" | head -1)}"
