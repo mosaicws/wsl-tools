@@ -77,7 +77,8 @@ candidates=()
 menu_items=()
 declare -A pub_keys
 
-while IFS= read -r distro; do
+# Read from fd 3 so wsl.exe can't consume the loop's input via stdin
+while IFS= read -r distro <&3; do
     if [ -z "$distro" ]; then continue; fi
     if [ "$distro" = "$current_distro" ]; then
         echo "  Skipping $distro (current instance)" >&2
@@ -85,8 +86,7 @@ while IFS= read -r distro; do
     fi
 
     echo -n "  Checking $distro... " >&2
-    # stdin must be /dev/null — wsl.exe consumes stdin, which would eat remaining loop lines
-    pub=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" < /dev/null 2>/dev/null | tr -d '\r') || true
+    pub=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r') || true
     if [ -n "$pub" ]; then
         candidates+=("$distro")
         comment=$(echo "$pub" | awk '{print $3}')
@@ -96,7 +96,7 @@ while IFS= read -r distro; do
     else
         echo "no key" >&2
     fi
-done <<< "$all_distros"
+done 3<<< "$all_distros"
 
 echo "  Found ${#candidates[@]} distro(s) with keys (excluded self: ${current_distro:-none})" >&2
 
