@@ -5,7 +5,7 @@ set -euo pipefail
 # Scans other WSL instances for SSH keys and imports them interactively.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh -o /tmp/ssh-import.sh && bash /tmp/ssh-import.sh
+#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh | bash
 
 SSH_DIR="$HOME/.ssh"
 SSH_KEY="$SSH_DIR/id_ed25519"

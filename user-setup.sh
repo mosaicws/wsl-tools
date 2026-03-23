@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # Usage:
 #   apt update && apt install -y curl
-#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/user-setup.sh -o /tmp/user-setup.sh && bash /tmp/user-setup.sh
+#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/user-setup.sh | bash
 
 REPO_URL="https://api.github.com/repos/mosaicws/wsl-tools/contents"
 REPO_RAW="https://raw.githubusercontent.com/mosaicws/wsl-tools/main"

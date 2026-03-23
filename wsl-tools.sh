@@ -4,8 +4,8 @@ set -euo pipefail
 # WSL Tools — Interactive menu for WSL2 setup tasks
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/wsl-tools.sh -o /tmp/wsl-tools.sh && bash /tmp/wsl-tools.sh
-#   bash /tmp/wsl-tools.sh --debug
+#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/wsl-tools.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/wsl-tools.sh | bash -s -- --debug
 
 REPO_URL="https://api.github.com/repos/mosaicws/wsl-tools/contents"
 REPO_RAW="https://raw.githubusercontent.com/mosaicws/wsl-tools/main"
