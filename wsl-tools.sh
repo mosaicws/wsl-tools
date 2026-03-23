@@ -5,115 +5,68 @@ set -euo pipefail
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/wsl-tools.sh -o /tmp/wsl-tools.sh && bash /tmp/wsl-tools.sh
-#   bash /tmp/wsl-tools.sh --debug    # enable debug output
+#   bash /tmp/wsl-tools.sh --debug
 
-REPO_BASE="https://raw.githubusercontent.com/mosaicws/wsl-tools/main"
+REPO_URL="https://api.github.com/repos/mosaicws/wsl-tools/contents"
+REPO_RAW="https://raw.githubusercontent.com/mosaicws/wsl-tools/main"
+TTY_IN=$([ -e /dev/tty ] && echo /dev/tty || echo /dev/stdin)
 
-# ── Debug mode ───────────────────────────────────────────────
 DEBUG=false
 for arg in "$@"; do
-    [ "$arg" = "--debug" ] || [ "$arg" = "-d" ] && DEBUG=true
+    [[ "$arg" == "--debug" || "$arg" == "-d" ]] && DEBUG=true
 done
 debug() { $DEBUG && echo -e "\033[0;36m[DEBUG]\033[0m $1" >&2 || true; }
 
-# ── Colours ──────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
-# ── Pre-flight ───────────────────────────────────────────────
-
-if [ ! -f /proc/version ] || ! grep -qi microsoft /proc/version 2>/dev/null; then
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
     error "This tool is designed to run inside WSL2."
     exit 1
 fi
 
-# Ensure whiptail is available
 if ! command -v whiptail &>/dev/null; then
-    echo "Installing whiptail..."
-    apt-get update -qq && apt-get install -y -qq whiptail 2>/dev/null || sudo apt-get update -qq && sudo apt-get install -y -qq whiptail
+    info "Installing whiptail..."
+    apt-get update -qq && apt-get install -y -qq whiptail 2>/dev/null \
+        || { sudo apt-get update -qq && sudo apt-get install -y -qq whiptail; }
 fi
 
-# ── Helpers ──────────────────────────────────────────────────
-
 download_script() {
-    local script="$1"
-    local dest="$2"
-    debug "Downloading $script to $dest"
-    # Try API endpoint first (no CDN cache), fall back to raw
-    curl -H "Accept: application/vnd.github.v3.raw" -fsSL \
-        "https://api.github.com/repos/mosaicws/wsl-tools/contents/$script" > "$dest" 2>/dev/null \
-    || curl -fsSL "$REPO_BASE/$script" > "$dest"
+    local script="$1" dest="$2"
+    debug "Downloading $script"
+    curl -H "Accept: application/vnd.github.v3.raw" -fsSL "$REPO_URL/$script" > "$dest" 2>/dev/null \
+        || curl -fsSL "$REPO_RAW/$script" > "$dest"
     chmod 755 "$dest"
     debug "Downloaded $(wc -c < "$dest") bytes"
 }
 
 run_remote_script() {
-    local script="$1"
     local tmpfile
     tmpfile=$(mktemp /tmp/wsl-tools.XXXXXX)
-    download_script "$script" "$tmpfile"
-    debug "Running $tmpfile"
-    bash "$tmpfile"
+    download_script "$1" "$tmpfile"
+    WSL_TOOLS_MENU=1 bash "$tmpfile"
     rm -f "$tmpfile"
 }
 
-# ── Status detection ─────────────────────────────────────────
-
-get_status() {
-    local items=()
-
-    # User setup
-    if [ "$(id -u)" -eq 0 ]; then
-        items+=("user" "NEEDED")
-    else
-        items+=("user" "$(whoami)")
+find_normal_user() {
+    local user
+    user=$(grep '^default=' /etc/wsl.conf 2>/dev/null | cut -d= -f2) || true
+    if [ -n "$user" ] && [ "$user" != "root" ] && id "$user" &>/dev/null; then
+        echo "$user"; return
     fi
-
-    # SSH keys
-    if [ -f "$HOME/.ssh/id_ed25519" ]; then
-        local comment
-        comment=$(awk '{print $3}' "$HOME/.ssh/id_ed25519.pub" 2>/dev/null) || comment=""
-        items+=("ssh" "${comment:-configured}")
-    else
-        items+=("ssh" "NOT FOUND")
-    fi
-
-    # Git
-    if command -v git &>/dev/null; then
-        local git_name
-        git_name=$(git config --global user.name 2>/dev/null) || git_name=""
-        items+=("git" "${git_name:-not configured}")
-    else
-        items+=("git" "not installed")
-    fi
-
-    # WSL interop
-    if command -v wsl.exe &>/dev/null; then
-        items+=("interop" "enabled")
-    else
-        items+=("interop" "DISABLED")
-    fi
-
-    printf '%s\n' "${items[@]}"
+    awk -F: '$3 >= 1000 && $3 < 65534 {print $1; exit}' /etc/passwd
 }
 
 # ── Menu ─────────────────────────────────────────────────────
 
 show_menu() {
-    # Build status line
-    local ssh_status="not found"
-    local user_status="root"
+    local ssh_status="not found" user_status="root"
     [ -f "$HOME/.ssh/id_ed25519" ] && ssh_status="configured"
     [ "$(id -u)" -ne 0 ] && user_status="$(whoami)"
 
-    local choice
-    choice=$(whiptail --title "WSL Tools" \
+    whiptail --title "WSL Tools" \
         --menu "Current: user=$user_status | ssh=$ssh_status\n\nSelect an operation:" \
         18 70 6 \
         "1" "Create user account (run as root)" \
@@ -121,9 +74,7 @@ show_menu() {
         "3" "Test GitHub SSH connection" \
         "4" "Show system info" \
         "5" "Exit" \
-        3>&1 1>&2 2>&3) || exit 0
-
-    echo "$choice"
+        3>&1 1>&2 2>&3 || echo "5"
 }
 
 # ── Operations ───────────────────────────────────────────────
@@ -131,51 +82,34 @@ show_menu() {
 op_create_user() {
     if [ "$(id -u)" -ne 0 ]; then
         error "User setup must be run as root."
-        echo "  Run this tool as root: sudo bash /tmp/wsl-tools.sh"
-        read -rp "Press ENTER to continue..." < /dev/tty
+        read -rp "Press ENTER to continue..." < "$TTY_IN"
         return
     fi
     run_remote_script "user-setup.sh"
 
-    # After user creation, offer to switch
     local default_user
-    default_user=$(grep '^default=' /etc/wsl.conf 2>/dev/null | cut -d= -f2) || true
-    if [ -n "$default_user" ] && [ "$default_user" != "root" ] && id "$default_user" &>/dev/null; then
-        echo ""
-        read -rp "Switch to '$default_user' now? [Y/n] " switch_user < /dev/tty
+    default_user=$(find_normal_user)
+    if [ -n "$default_user" ]; then
+        read -rp "Switch to '$default_user' and relaunch menu? [Y/n] " switch_user < "$TTY_IN"
         if [[ ! "$switch_user" =~ ^[Nn]$ ]]; then
             info "Switching to '$default_user'..."
-            exec su - "$default_user" -c "bash /tmp/wsl-tools.sh" < /dev/tty
+            exec su - "$default_user" -c "bash /tmp/wsl-tools.sh" < "$TTY_IN"
         fi
     fi
 }
 
-# Find a non-root user to run commands as
-find_normal_user() {
-    # Check wsl.conf default user first
-    local default_user
-    default_user=$(grep '^default=' /etc/wsl.conf 2>/dev/null | cut -d= -f2) || true
-    if [ -n "$default_user" ] && [ "$default_user" != "root" ] && id "$default_user" &>/dev/null; then
-        echo "$default_user"
-        return
-    fi
-    # Fall back to first user with uid >= 1000
-    awk -F: '$3 >= 1000 && $3 < 65534 {print $1; exit}' /etc/passwd
-}
-
 op_import_ssh() {
-    local target_user=""
-    local target_home=""
+    local target_user="" target_home=""
 
     if [ "$(id -u)" -eq 0 ]; then
         target_user=$(find_normal_user)
         if [ -z "$target_user" ]; then
             error "No normal user account found. Create a user first (option 1)."
-            read -rp "Press ENTER to continue..." < /dev/tty
+            read -rp "Press ENTER to continue..." < "$TTY_IN"
             return
         fi
         target_home=$(eval echo "~$target_user")
-        debug "Will import SSH keys for '$target_user' (home=$target_home)"
+        debug "Importing SSH keys for '$target_user' (home=$target_home)"
     fi
 
     local tmpscript
@@ -184,16 +118,13 @@ op_import_ssh() {
 
     if [ -n "$target_user" ]; then
         info "Importing SSH keys for '$target_user'..."
-        # Run as root but with target user's HOME/USER so keys go to the right place
         HOME="$target_home" USER="$target_user" bash "$tmpscript"
-        # Fix ownership — root created the files
         chown -R "$target_user:$target_user" "$target_home/.ssh" 2>/dev/null || true
     else
         bash "$tmpscript"
     fi
     rm -f "$tmpscript"
-
-    read -rp "Press ENTER to continue..." < /dev/tty
+    read -rp "Press ENTER to continue..." < "$TTY_IN"
 }
 
 op_test_ssh() {
@@ -204,47 +135,45 @@ op_test_ssh() {
         info "Key fingerprint:"
         ssh-keygen -lf "$HOME/.ssh/id_ed25519.pub" 2>/dev/null || true
         echo ""
-        info "Testing GitHub connection..."
-        ssh -T git@github.com 2>&1 || true
+        if command -v ssh &>/dev/null; then
+            info "Testing GitHub connection..."
+            ssh -T git@github.com 2>&1 || true
+        else
+            warn "openssh-client not installed — install it to test SSH connections."
+        fi
     fi
     echo ""
-    read -rp "Press ENTER to continue..." < /dev/tty
+    read -rp "Press ENTER to continue..." < "$TTY_IN"
 }
 
 op_system_info() {
     echo ""
     echo "── System ──────────────────────────────────────────"
-    echo "  Distro:    ${WSL_DISTRO_NAME:-unknown}"
-    cat /etc/os-release 2>/dev/null | grep -E '^(PRETTY_NAME|VERSION)=' | sed 's/^/  /'
-    echo "  Kernel:    $(uname -r)"
-    echo "  User:      $(whoami) (uid=$(id -u))"
-    echo "  Home:      $HOME"
+    echo "  Distro:  ${WSL_DISTRO_NAME:-unknown}"
+    grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | sed 's/^PRETTY_NAME=/  OS:     /' | tr -d '"'
+    echo "  Kernel:  $(uname -r)"
+    echo "  User:    $(whoami) (uid=$(id -u))"
     echo ""
     echo "── Tools ───────────────────────────────────────────"
-    echo "  git:       $(git --version 2>/dev/null || echo 'not installed')"
-    echo "  curl:      $(curl --version 2>/dev/null | head -1 || echo 'not installed')"
-    echo "  ansible:   $(ansible --version 2>/dev/null | head -1 || echo 'not installed')"
-    echo "  bun:       $(bun --version 2>/dev/null || echo 'not installed')"
-    echo "  node:      $(node --version 2>/dev/null || echo 'not installed')"
-    echo "  wsl.exe:   $(command -v wsl.exe &>/dev/null && echo 'available' || echo 'NOT available')"
+    for tool in git curl ansible bun node; do
+        ver=$($tool --version 2>/dev/null | head -1) || ver="not installed"
+        printf "  %-9s %s\n" "$tool:" "$ver"
+    done
+    printf "  %-9s %s\n" "wsl.exe:" "$(command -v wsl.exe &>/dev/null && echo 'available' || echo 'not available')"
     echo ""
     echo "── SSH ─────────────────────────────────────────────"
-    if [ -f "$HOME/.ssh/id_ed25519" ]; then
+    if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
         ssh-keygen -lf "$HOME/.ssh/id_ed25519.pub" 2>/dev/null | sed 's/^/  /'
     else
         echo "  No SSH key found"
     fi
     echo ""
-    echo "── WSL Config ──────────────────────────────────────"
-    cat /etc/wsl.conf 2>/dev/null | sed 's/^/  /' || echo "  No wsl.conf"
-    echo ""
-    read -rp "Press ENTER to continue..." < /dev/tty
+    read -rp "Press ENTER to continue..." < "$TTY_IN"
 }
 
 # ── Main loop ────────────────────────────────────────────────
 
 debug "Starting wsl-tools (uid=$(id -u), user=$(whoami))"
-debug "REPO_BASE=$REPO_BASE"
 
 while true; do
     choice=$(show_menu)
@@ -254,6 +183,6 @@ while true; do
         2) op_import_ssh ;;
         3) op_test_ssh ;;
         4) op_system_info ;;
-        5) exit 0 ;;
+        *) exit 0 ;;
     esac
 done

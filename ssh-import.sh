@@ -5,37 +5,19 @@ set -euo pipefail
 # Scans other WSL instances for SSH keys and imports them interactively.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh | bash
-#
-# Or download and run:
-#   wget -qO ssh-import.sh https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh
-#   bash ssh-import.sh
+#   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh -o /tmp/ssh-import.sh && bash /tmp/ssh-import.sh
 
 SSH_DIR="$HOME/.ssh"
 SSH_KEY="$SSH_DIR/id_ed25519"
+TTY_IN=$([ -e /dev/tty ] && echo /dev/tty || echo /dev/stdin)
 
-# ── TTY handling ─────────────────────────────────────────────
-# When run via curl|bash or su -c, /dev/tty may not exist.
-# Detect and use the right input source for interactive prompts.
-if [ -e /dev/tty ]; then
-    TTY_IN=/dev/tty
-else
-    TTY_IN=/dev/stdin
-fi
-
-# ── Colours ──────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
-# ── Pre-flight checks ───────────────────────────────────────
-
-if [ ! -f /proc/version ] || ! grep -qi microsoft /proc/version 2>/dev/null; then
+# WSL2 check
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
     error "This script is designed to run inside WSL2."
     exit 1
 fi
@@ -44,17 +26,14 @@ mkdir -p "$SSH_DIR" && chmod 700 "$SSH_DIR"
 
 if [ -f "$SSH_KEY" ]; then
     info "SSH key already exists at $SSH_KEY"
-    echo ""
     ssh-keygen -lf "$SSH_KEY.pub" 2>/dev/null || true
     echo ""
     read -rp "Overwrite with a key from another WSL instance? [y/N] " overwrite < "$TTY_IN"
     if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-        info "Keeping existing key. Nothing to do."
+        info "Keeping existing key."
         exit 0
     fi
 fi
-
-# ── Discover WSL distros with SSH keys ───────────────────────
 
 if ! command -v wsl.exe &>/dev/null; then
     error "wsl.exe not available. Windows interop may be disabled in /etc/wsl.conf"
@@ -63,108 +42,87 @@ fi
 
 info "Scanning WSL instances for SSH keys..."
 
-# Get current distro to exclude it
-current_distro="${WSL_DISTRO_NAME:-}"
-if [ -z "$current_distro" ]; then
-    current_distro=$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 | tr -d '\r' | head -1) || true
-fi
+# Get distro list once, detect current distro
+all_distros=$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 | tr -d '\r' | sed '/^$/d')
+current_distro="${WSL_DISTRO_NAME:-$(echo "$all_distros" | head -1)}"
 
-# Build list of distros that have SSH keys
 candidates=()
 menu_items=()
+declare -A pub_keys
+
 while IFS= read -r distro; do
-    [ -z "$distro" ] && continue
-    [ "$distro" = "$current_distro" ] && continue
+    [ -z "$distro" ] || [ "$distro" = "$current_distro" ] && continue
 
     echo -n "  Checking $distro... " >&2
-    if wsl.exe -d "$distro" -- test -f "/home/$USER/.ssh/id_ed25519" 2>/dev/null; then
+    # Single call: test existence and read pub key in one shot
+    pub=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r') || true
+    if [ -n "$pub" ]; then
         candidates+=("$distro")
-        comment=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r' | awk '{print $3}') || comment=""
+        comment=$(echo "$pub" | awk '{print $3}')
         menu_items+=("$distro" "${comment:-SSH key found}")
+        pub_keys["$distro"]="$pub"
         echo "found key" >&2
     else
-        echo "no key (user=$USER)" >&2
+        echo "no key" >&2
     fi
-done < <(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 | tr -d '\r' | sed '/^$/d')
+done <<< "$all_distros"
 
-echo "  Scanned ${#candidates[@]} distro(s) with keys (excluded self: ${current_distro:-none})" >&2
+echo "  Found ${#candidates[@]} distro(s) with keys (excluded self: ${current_distro:-none})" >&2
 
 if [ ${#candidates[@]} -eq 0 ]; then
     warn "No other WSL instances found with SSH keys for user '$USER'"
     echo ""
-    echo "You can copy keys manually:"
-    echo "  From Windows Explorer, copy the files from:"
-    echo "    \\\\wsl\$\\<source-distro>\\home\\$USER\\.ssh\\"
-    echo "  Into:"
-    echo "    \\\\wsl\$\\${WSL_DISTRO_NAME:-this-distro}\\home\\$USER\\.ssh\\"
-    echo ""
-    echo "Files needed: id_ed25519, id_ed25519.pub, known_hosts"
+    echo "Copy keys manually via Windows Explorer:"
+    echo "  From: \\\\wsl\$\\<source-distro>\\home\\$USER\\.ssh\\"
+    echo "  To:   \\\\wsl\$\\${WSL_DISTRO_NAME:-this-distro}\\home\\$USER\\.ssh\\"
+    echo "  Files: id_ed25519, id_ed25519.pub, known_hosts"
     exit 1
 fi
 
-# ── Interactive selection ────────────────────────────────────
-
-# Use whiptail if available, otherwise fall back to simple numbered menu
-if command -v whiptail &>/dev/null; then
+# Selection — whiptail if available, numbered list otherwise
+if command -v whiptail &>/dev/null && [ -e /dev/tty ]; then
     selected=$(whiptail --title "SSH Key Import" \
         --menu "Select the WSL instance to copy SSH keys from:" \
         16 70 ${#candidates[@]} \
         "${menu_items[@]}" \
-        3>&1 1>&2 2>&3) || {
-        warn "Selection cancelled."
-        exit 1
-    }
+        3>&1 1>&2 2>&3) || { warn "Selection cancelled."; exit 1; }
 else
     echo ""
     echo "Available WSL instances with SSH keys:"
-    echo ""
     for i in "${!candidates[@]}"; do
         echo "  $((i+1))) ${candidates[$i]}  (${menu_items[$((i*2+1))]})"
     done
     echo ""
     read -rp "Select [1-${#candidates[@]}]: " choice < "$TTY_IN"
     if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#candidates[@]} ]; then
-        error "Invalid selection."
-        exit 1
+        error "Invalid selection."; exit 1
     fi
     selected="${candidates[$((choice-1))]}"
 fi
 
-# ── Confirmation ─────────────────────────────────────────────
-
-pub_key=$(wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r')
-
+# Confirmation using cached pub key
 echo ""
 echo "Source:     $selected"
-echo "Public key: $pub_key"
+echo "Public key: ${pub_keys[$selected]}"
 echo "Target:     $SSH_DIR/"
 echo ""
-
 read -rp "Proceed? [Y/n] " confirm < "$TTY_IN"
 if [[ "$confirm" =~ ^[Nn]$ ]]; then
-    warn "Import cancelled."
-    exit 1
+    warn "Import cancelled."; exit 1
 fi
 
-# ── Copy keys ────────────────────────────────────────────────
-
+# Copy keys — cat directly (skip test, handle missing gracefully)
 info "Copying SSH keys from $selected..."
-
-wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/id_ed25519" | tr -d '\r' > "$SSH_KEY"
+wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/id_ed25519" 2>/dev/null | tr -d '\r' > "$SSH_KEY"
 chmod 600 "$SSH_KEY"
 
-if wsl.exe -d "$selected" -- test -f "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null; then
-    wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/id_ed25519.pub" | tr -d '\r' > "$SSH_KEY.pub"
-    chmod 644 "$SSH_KEY.pub"
-fi
+wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r' > "$SSH_KEY.pub" || true
+[ -f "$SSH_KEY.pub" ] && chmod 644 "$SSH_KEY.pub"
 
-if wsl.exe -d "$selected" -- test -f "/home/$USER/.ssh/known_hosts" 2>/dev/null; then
-    wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/known_hosts" | tr -d '\r' > "$SSH_DIR/known_hosts"
-    chmod 644 "$SSH_DIR/known_hosts"
-fi
+wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/known_hosts" 2>/dev/null | tr -d '\r' > "$SSH_DIR/known_hosts" || true
+[ -f "$SSH_DIR/known_hosts" ] && chmod 644 "$SSH_DIR/known_hosts"
 
-# ── Configure SSH for GitHub ─────────────────────────────────
-
+# GitHub SSH config
 if [ ! -f "$SSH_DIR/config" ]; then
     cat > "$SSH_DIR/config" << 'SSHCONFIG'
 Host github.com
@@ -177,13 +135,12 @@ SSHCONFIG
     info "Created ~/.ssh/config for GitHub"
 fi
 
-# ── Verify ───────────────────────────────────────────────────
-
 echo ""
 info "SSH keys imported successfully from $selected"
-info "Key fingerprint:"
 ssh-keygen -lf "$SSH_KEY.pub" 2>/dev/null || true
 echo ""
-info "Testing GitHub connection..."
-ssh -T git@github.com 2>&1 | head -1 || true
+if command -v ssh &>/dev/null; then
+    info "Testing GitHub connection..."
+    ssh -T git@github.com 2>&1 | head -1 || true
+fi
 echo ""
