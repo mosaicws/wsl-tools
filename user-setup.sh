@@ -142,9 +142,9 @@ if command -v wsl.exe &>/dev/null; then
 
     if [[ ! "$import_ssh" =~ ^[Nn]$ ]]; then
         # Download and run as the new user with tty access
-        tmpscript=$(mktemp)
+        tmpscript=$(mktemp /tmp/ssh-import.XXXXXX)
         curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh > "$tmpscript"
-        chmod +x "$tmpscript"
+        chmod 755 "$tmpscript"
         su - "$username" -c "bash $tmpscript" < /dev/tty
         rm -f "$tmpscript"
     fi

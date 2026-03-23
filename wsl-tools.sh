@@ -151,9 +151,9 @@ op_import_ssh() {
         if [ -n "$target_user" ]; then
             info "Running SSH import as '$target_user'..."
             local tmpscript
-            tmpscript=$(mktemp)
+            tmpscript=$(mktemp /tmp/ssh-import.XXXXXX)
             curl -fsSL "$REPO_BASE/ssh-import.sh" > "$tmpscript"
-            chmod +x "$tmpscript"
+            chmod 755 "$tmpscript"
             su - "$target_user" -c "bash $tmpscript" < /dev/tty
             rm -f "$tmpscript"
         else
