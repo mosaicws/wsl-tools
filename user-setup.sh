@@ -122,21 +122,13 @@ BASHRC
     chown "$username:$username" "/home/$username/.bashrc"
 fi
 
-# ── Shutdown ─────────────────────────────────────────────────
-
-distro_name="${WSL_DISTRO_NAME:-}"
+# ── Switch to new user ────────────────────────────────────────
 
 echo ""
-info "User '$username' is ready."
+info "User '$username' is ready. Switching now..."
 echo ""
-echo "  Next step after restart — import SSH keys:"
+echo "  Next step — import SSH keys:"
 echo "    curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh | bash"
 echo ""
 
-if [ -n "$distro_name" ]; then
-    info "Shutting down in 5 seconds... (reopen with: wsl -d $distro_name)"
-    sleep 5
-    wsl.exe --terminate "$distro_name"
-else
-    info "Close this terminal and restart the WSL instance to log in as '$username'."
-fi
+exec su - "$username"
