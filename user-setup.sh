@@ -6,6 +6,7 @@ set -euo pipefail
 # Run as root on a fresh WSL2 instance.
 #
 # Usage:
+#   apt update && apt install -y curl
 #   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/user-setup.sh | bash
 
 # ── Colours ──────────────────────────────────────────────────
@@ -39,7 +40,7 @@ echo ""
 
 # ── Get username ─────────────────────────────────────────────
 
-read -rp "Enter username to create: " username
+read -rp "Enter username to create: " username < /dev/tty
 
 if [ -z "$username" ]; then
     error "Username cannot be empty."
@@ -49,7 +50,7 @@ fi
 # Check if user already exists
 if id "$username" &>/dev/null; then
     warn "User '$username' already exists."
-    read -rp "Continue with configuring sudo and default login? [Y/n] " cont
+    read -rp "Continue with configuring sudo and default login? [Y/n] " cont < /dev/tty
     if [[ "$cont" =~ ^[Nn]$ ]]; then
         exit 0
     fi
@@ -59,7 +60,7 @@ else
     useradd -m -s /bin/bash "$username"
 
     info "Set password for '$username':"
-    passwd "$username"
+    passwd "$username" < /dev/tty
 fi
 
 # ── Configure sudo ───────────────────────────────────────────
@@ -125,10 +126,15 @@ fi
 echo ""
 info "User '$username' is ready."
 echo ""
-read -rp "Import SSH keys from another WSL instance now? [Y/n] " import_ssh
+read -rp "Import SSH keys from another WSL instance now? [Y/n] " import_ssh < /dev/tty
 
 if [[ ! "$import_ssh" =~ ^[Nn]$ ]]; then
-    su - "$username" -c 'curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh | bash'
+    # Download and run as the new user with tty access
+    tmpscript=$(mktemp)
+    curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh > "$tmpscript"
+    chmod +x "$tmpscript"
+    su - "$username" -c "bash $tmpscript" < /dev/tty
+    rm -f "$tmpscript"
 fi
 
 # ── Switch to new user ───────────────────────────────────────

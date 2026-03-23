@@ -38,7 +38,7 @@ if [ -f "$SSH_KEY" ]; then
     echo ""
     ssh-keygen -lf "$SSH_KEY.pub" 2>/dev/null || true
     echo ""
-    read -rp "Overwrite with a key from another WSL instance? [y/N] " overwrite
+    read -rp "Overwrite with a key from another WSL instance? [y/N] " overwrite < /dev/tty
     if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
         info "Keeping existing key. Nothing to do."
         exit 0
@@ -107,7 +107,7 @@ else
         echo "  $((i+1))) ${candidates[$i]}  (${menu_items[$((i*2+1))]})"
     done
     echo ""
-    read -rp "Select [1-${#candidates[@]}]: " choice
+    read -rp "Select [1-${#candidates[@]}]: " choice < /dev/tty
     if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#candidates[@]} ]; then
         error "Invalid selection."
         exit 1
@@ -133,7 +133,7 @@ if command -v whiptail &>/dev/null; then
         exit 1
     }
 else
-    read -rp "Proceed? [Y/n] " confirm
+    read -rp "Proceed? [Y/n] " confirm < /dev/tty
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
         warn "Import cancelled."
         exit 1
