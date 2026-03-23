@@ -74,9 +74,11 @@ while IFS= read -r distro; do
         menu_items+=("$distro" "${comment:-SSH key found}")
         echo "found key" >&2
     else
-        echo "no key" >&2
+        echo "no key (user=$USER)" >&2
     fi
 done < <(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 | tr -d '\r' | sed '/^$/d')
+
+echo "  Scanned ${#candidates[@]} distro(s) with keys (excluded self: ${current_distro:-none})" >&2
 
 if [ ${#candidates[@]} -eq 0 ]; then
     warn "No other WSL instances found with SSH keys for user '$USER'"
