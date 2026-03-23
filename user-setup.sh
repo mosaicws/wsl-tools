@@ -54,9 +54,9 @@ else
 fi
 
 # Install sudo and curl if needed
-if ! command -v sudo &>/dev/null || ! command -v curl &>/dev/null; then
+if ! command -v sudo &>/dev/null || ! command -v curl &>/dev/null || ! command -v ssh &>/dev/null; then
     info "Installing required packages..."
-    apt-get update -qq && apt-get install -y -qq sudo curl
+    apt-get update -qq && apt-get install -y -qq sudo curl openssh-client
 fi
 
 if ! groups "$username" | grep -q '\bsudo\b'; then
