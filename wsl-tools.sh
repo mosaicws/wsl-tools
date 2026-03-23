@@ -5,8 +5,16 @@ set -euo pipefail
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/wsl-tools.sh -o /tmp/wsl-tools.sh && bash /tmp/wsl-tools.sh
+#   bash /tmp/wsl-tools.sh --debug    # enable debug output
 
 REPO_BASE="https://raw.githubusercontent.com/mosaicws/wsl-tools/main"
+
+# ── Debug mode ───────────────────────────────────────────────
+DEBUG=false
+for arg in "$@"; do
+    [ "$arg" = "--debug" ] || [ "$arg" = "-d" ] && DEBUG=true
+done
+debug() { $DEBUG && echo -e "\033[0;36m[DEBUG]\033[0m $1" >&2 || true; }
 
 # ── Colours ──────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -33,14 +41,25 @@ fi
 
 # ── Helpers ──────────────────────────────────────────────────
 
+download_script() {
+    local script="$1"
+    local dest="$2"
+    debug "Downloading $script to $dest"
+    # Try API endpoint first (no CDN cache), fall back to raw
+    curl -H "Accept: application/vnd.github.v3.raw" -fsSL \
+        "https://api.github.com/repos/mosaicws/wsl-tools/contents/$script" > "$dest" 2>/dev/null \
+    || curl -fsSL "$REPO_BASE/$script" > "$dest"
+    chmod 755 "$dest"
+    debug "Downloaded $(wc -c < "$dest") bytes"
+}
+
 run_remote_script() {
     local script="$1"
     local tmpfile
-    tmpfile=$(mktemp)
-    info "Downloading $script..."
-    curl -fsSL "$REPO_BASE/$script" > "$tmpfile"
-    chmod +x "$tmpfile"
-    WSL_TOOLS_MENU=1 bash "$tmpfile"
+    tmpfile=$(mktemp /tmp/wsl-tools.XXXXXX)
+    download_script "$script" "$tmpfile"
+    debug "Running $tmpfile"
+    bash "$tmpfile"
     rm -f "$tmpfile"
 }
 
@@ -145,25 +164,33 @@ find_normal_user() {
 }
 
 op_import_ssh() {
+    local run_as=""
+
     if [ "$(id -u)" -eq 0 ]; then
-        local target_user
-        target_user=$(find_normal_user)
-        if [ -n "$target_user" ]; then
-            info "Running SSH import as '$target_user'..."
-            local tmpscript
-            tmpscript=$(mktemp /tmp/ssh-import.XXXXXX)
-            curl -fsSL "$REPO_BASE/ssh-import.sh" > "$tmpscript"
-            chmod 755 "$tmpscript"
-            # Use script to allocate a PTY so wsl.exe and whiptail work properly
-            su - "$target_user" -c "script -qc 'bash $tmpscript' /dev/null" < /dev/tty
-            rm -f "$tmpscript"
-        else
+        run_as=$(find_normal_user)
+        if [ -z "$run_as" ]; then
             error "No normal user account found. Create a user first (option 1)."
             read -rp "Press ENTER to continue..." < /dev/tty
+            return
         fi
-        return
+        debug "Will run SSH import as '$run_as'"
     fi
-    run_remote_script "ssh-import.sh"
+
+    local tmpscript
+    tmpscript=$(mktemp /tmp/ssh-import.XXXXXX)
+    download_script "ssh-import.sh" "$tmpscript"
+
+    if [ -n "$run_as" ]; then
+        info "Running SSH import as '$run_as'..."
+        debug "Executing: su - $run_as -c 'bash $tmpscript'"
+        # Run with explicit tty access for interactive prompts
+        su "$run_as" -c "bash $tmpscript" < /dev/tty > /dev/tty 2>&1
+    else
+        bash "$tmpscript"
+    fi
+    rm -f "$tmpscript"
+
+    read -rp "Press ENTER to continue..." < /dev/tty
 }
 
 op_test_ssh() {
@@ -213,8 +240,12 @@ op_system_info() {
 
 # ── Main loop ────────────────────────────────────────────────
 
+debug "Starting wsl-tools (uid=$(id -u), user=$(whoami))"
+debug "REPO_BASE=$REPO_BASE"
+
 while true; do
     choice=$(show_menu)
+    debug "Menu choice: $choice"
     case "$choice" in
         1) op_create_user ;;
         2) op_import_ssh ;;
