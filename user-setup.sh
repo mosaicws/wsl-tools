@@ -122,13 +122,19 @@ BASHRC
     chown "$username:$username" "/home/$username/.bashrc"
 fi
 
-# ── Switch to new user ────────────────────────────────────────
+# ── SSH key import ────────────────────────────────────────────
 
 echo ""
-info "User '$username' is ready. Switching now..."
+info "User '$username' is ready."
 echo ""
-echo "  Next step — import SSH keys:"
-echo "    curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh | bash"
-echo ""
+read -rp "Import SSH keys from another WSL instance now? [Y/n] " import_ssh
 
+if [[ ! "$import_ssh" =~ ^[Nn]$ ]]; then
+    su - "$username" -c 'curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh | bash'
+fi
+
+# ── Switch to new user ───────────────────────────────────────
+
+echo ""
+info "Switching to '$username'..."
 exec su - "$username"
