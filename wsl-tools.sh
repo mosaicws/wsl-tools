@@ -65,7 +65,7 @@ show_menu() {
     local ssh_status="not found" user_status="root" ssh_home="$HOME"
     if [ "$(id -u)" -eq 0 ]; then
         local nu; nu=$(find_normal_user)
-        [ -n "$nu" ] && { user_status="$nu"; ssh_home=$(eval echo "~$nu"); }
+        [ -n "$nu" ] && { user_status="$nu"; ssh_home=$(getent passwd "$nu" | cut -d: -f6); }
     else
         user_status="$(whoami)"
     fi
@@ -113,7 +113,7 @@ op_import_ssh() {
             read -rp "Press ENTER to continue..." < "$TTY_IN"
             return
         fi
-        target_home=$(eval echo "~$target_user")
+        target_home=$(getent passwd "$target_user" | cut -d: -f6)
         debug "Importing SSH keys for '$target_user' (home=$target_home)"
     fi
 
@@ -137,7 +137,7 @@ op_test_ssh() {
     if [ "$(id -u)" -eq 0 ]; then
         local target_user
         target_user=$(find_normal_user)
-        [ -n "$target_user" ] && ssh_home=$(eval echo "~$target_user")
+        [ -n "$target_user" ] && ssh_home=$(getent passwd "$target_user" | cut -d: -f6)
     fi
 
     echo ""
@@ -174,8 +174,13 @@ op_system_info() {
     printf "  %-9s %s\n" "wsl.exe:" "$(command -v wsl.exe &>/dev/null && echo 'available' || echo 'not available')"
     echo ""
     echo "── SSH ─────────────────────────────────────────────"
-    if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
-        ssh-keygen -lf "$HOME/.ssh/id_ed25519.pub" 2>/dev/null | sed 's/^/  /'
+    local ssh_home="$HOME"
+    if [ "$(id -u)" -eq 0 ]; then
+        local su; su=$(find_normal_user)
+        [ -n "$su" ] && ssh_home=$(getent passwd "$su" | cut -d: -f6)
+    fi
+    if [ -f "$ssh_home/.ssh/id_ed25519.pub" ]; then
+        ssh-keygen -lf "$ssh_home/.ssh/id_ed25519.pub" 2>/dev/null | sed 's/^/  /'
     else
         echo "  No SSH key found"
     fi

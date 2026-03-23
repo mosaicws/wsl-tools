@@ -53,7 +53,6 @@ else
     passwd "$username" < "$TTY_IN"
 fi
 
-# Install sudo and curl if needed
 if ! command -v sudo &>/dev/null || ! command -v curl &>/dev/null || ! command -v ssh &>/dev/null; then
     info "Installing required packages..."
     apt-get update -qq && apt-get install -y -qq sudo curl openssh-client
@@ -64,7 +63,6 @@ if ! groups "$username" | grep -q '\bsudo\b'; then
     usermod -aG sudo "$username"
 fi
 
-# Write wsl.conf cleanly (always overwrite — this is initial setup)
 info "Configuring WSL..."
 cat > /etc/wsl.conf << EOF
 [boot]
@@ -78,7 +76,14 @@ appendWindowsPath=true
 default=$username
 EOF
 
-# Bashrc additions for the new user
+# systemd-binfmt doesn't auto-register WSLInterop on some distros (e.g. Debian 13)
+if [ ! -f /usr/lib/binfmt.d/WSLInterop.conf ]; then
+    mkdir -p /usr/lib/binfmt.d
+    echo ':WSLInterop:M::MZ::/init:PF' > /usr/lib/binfmt.d/WSLInterop.conf
+    systemctl restart systemd-binfmt 2>/dev/null || true
+    info "Registered Windows interop (binfmt_misc)"
+fi
+
 bashrc="/home/$username/.bashrc"
 if ! grep -q 'MANAGED BY WSL-TOOLS' "$bashrc" 2>/dev/null; then
     cat >> "$bashrc" << 'BASHRC'
@@ -94,7 +99,6 @@ fi
 echo ""
 info "User '$username' is ready."
 
-# Offer SSH key import if wsl.exe is available
 if command -v wsl.exe &>/dev/null; then
     read -rp "Import SSH keys from another WSL instance now? [Y/n] " import_ssh < "$TTY_IN"
     if [[ ! "$import_ssh" =~ ^[Nn]$ ]]; then

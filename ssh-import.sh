@@ -16,7 +16,6 @@ info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
-# WSL2 check
 if ! grep -qi microsoft /proc/version 2>/dev/null; then
     error "This script is designed to run inside WSL2."
     exit 1
@@ -35,38 +34,41 @@ if [ -f "$SSH_KEY" ]; then
     fi
 fi
 
-restart_msg() {
-    local distro="${WSL_DISTRO_NAME:-<distro>}"
-    echo ""
-    echo "  This usually means WSL needs a restart to enable Windows interop."
-    echo "  From PowerShell, run:"
-    echo "    wsl --terminate $distro"
-    echo "    wsl -d $distro"
-    echo "  Then re-run this script."
+# Try to register WSLInterop if binfmt_misc entry is missing (common on Debian 13+)
+fix_interop() {
+    [ -f /proc/sys/fs/binfmt_misc/WSLInterop ] && return 0
+    warn "Windows interop not registered, attempting fix..."
+    mountpoint -q /proc/sys/fs/binfmt_misc 2>/dev/null \
+        || sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+    sudo sh -c 'echo :WSLInterop:M::MZ::/init:PF > /proc/sys/fs/binfmt_misc/register' 2>/dev/null || true
 }
 
-# Check wsl.exe is in PATH
 if ! command -v wsl.exe &>/dev/null; then
     error "wsl.exe not found in PATH."
-    restart_msg
+    echo "  Ensure [interop] appendWindowsPath=true in /etc/wsl.conf and restart WSL."
     exit 1
 fi
 
-# Check wsl.exe actually executes (binfmt_misc requires systemd)
 if ! wsl.exe --status &>/dev/null; then
-    error "wsl.exe cannot execute (systemd/binfmt_misc may not be active)."
-    restart_msg
-    exit 1
+    fix_interop
+    if ! wsl.exe --status &>/dev/null; then
+        error "wsl.exe cannot execute (Windows interop not active)."
+        echo ""
+        echo "  Try: sudo sh -c 'echo :WSLInterop:M::MZ::/init:PF > /proc/sys/fs/binfmt_misc/register'"
+        echo "  Or restart WSL from PowerShell:"
+        echo "    wsl --terminate ${WSL_DISTRO_NAME:-<distro>}"
+        echo "    wsl -d ${WSL_DISTRO_NAME:-<distro>}"
+        exit 1
+    fi
 fi
 
 info "Scanning WSL instances for SSH keys..."
 
-# wsl.exe outputs UTF-16LE on some Windows builds, UTF-8 on others
-all_distros=$(wsl.exe -l -q 2>/dev/null | { iconv -f UTF-16LE -t UTF-8 2>/dev/null || cat; } | tr -d '\r\0' | sed '/^$/d') || true
+# Strip null bytes (UTF-16LE→ASCII), BOM bytes, and carriage returns — handles both encodings
+all_distros=$(wsl.exe -l -q 2>/dev/null | tr -d '\r\0\377\376' | sed '/^$/d') || true
 
 if [ -z "$all_distros" ]; then
     error "Could not list WSL distributions."
-    restart_msg
     exit 1
 fi
 current_distro="${WSL_DISTRO_NAME:-$(echo "$all_distros" | head -1)}"
@@ -83,7 +85,6 @@ while IFS= read -r distro; do
     fi
 
     echo -n "  Checking $distro... " >&2
-    # Single call: test existence and read pub key in one shot
     pub=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r') || true
     if [ -n "$pub" ]; then
         candidates+=("$distro")
@@ -108,7 +109,6 @@ if [ ${#candidates[@]} -eq 0 ]; then
     exit 1
 fi
 
-# Selection — whiptail if available, numbered list otherwise
 if command -v whiptail &>/dev/null && [ -e /dev/tty ]; then
     selected=$(whiptail --title "SSH Key Import" \
         --menu "Select the WSL instance to copy SSH keys from:" \
@@ -129,7 +129,6 @@ else
     selected="${candidates[$((choice-1))]}"
 fi
 
-# Confirmation using cached pub key
 echo ""
 echo "Source:     $selected"
 echo "Public key: ${pub_keys[$selected]}"
@@ -140,18 +139,25 @@ if [[ "$confirm" =~ ^[Nn]$ ]]; then
     warn "Import cancelled."; exit 1
 fi
 
-# Copy keys — cat directly (skip test, handle missing gracefully)
+# Copy keys via temp files to avoid truncating existing keys on failure
 info "Copying SSH keys from $selected..."
-wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/id_ed25519" 2>/dev/null | tr -d '\r' > "$SSH_KEY"
-chmod 600 "$SSH_KEY"
+copy_remote_file() {
+    local remote_path="$1" local_path="$2" perms="$3"
+    local tmp
+    tmp=$(mktemp "$SSH_DIR/.tmp.XXXXXX")
+    if wsl.exe -d "$selected" -- cat "$remote_path" 2>/dev/null | tr -d '\r' > "$tmp" && [ -s "$tmp" ]; then
+        mv "$tmp" "$local_path"
+        chmod "$perms" "$local_path"
+    else
+        rm -f "$tmp"
+        return 1
+    fi
+}
 
-wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r' > "$SSH_KEY.pub" || true
-[ -f "$SSH_KEY.pub" ] && chmod 644 "$SSH_KEY.pub"
+copy_remote_file "/home/$USER/.ssh/id_ed25519" "$SSH_KEY" 600
+copy_remote_file "/home/$USER/.ssh/id_ed25519.pub" "$SSH_KEY.pub" 644 || true
+copy_remote_file "/home/$USER/.ssh/known_hosts" "$SSH_DIR/known_hosts" 644 || true
 
-wsl.exe -d "$selected" -- cat "/home/$USER/.ssh/known_hosts" 2>/dev/null | tr -d '\r' > "$SSH_DIR/known_hosts" || true
-[ -f "$SSH_DIR/known_hosts" ] && chmod 644 "$SSH_DIR/known_hosts"
-
-# GitHub SSH config
 if [ ! -f "$SSH_DIR/config" ]; then
     cat > "$SSH_DIR/config" << 'SSHCONFIG'
 Host github.com
