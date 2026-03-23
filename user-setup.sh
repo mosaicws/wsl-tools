@@ -64,11 +64,9 @@ fi
 
 # ── Configure sudo ───────────────────────────────────────────
 
-# Ensure sudo is installed
-if ! command -v sudo &>/dev/null; then
-    info "Installing sudo..."
-    apt-get update -qq && apt-get install -y -qq sudo
-fi
+# Ensure sudo and curl are installed
+info "Installing required packages..."
+apt-get update -qq && apt-get install -y -qq sudo curl
 
 # Add to sudo group
 if ! groups "$username" | grep -q '\bsudo\b'; then
