@@ -101,9 +101,18 @@ else
 [boot]
 systemd=true
 
+[interop]
+enabled=true
+appendWindowsPath=true
+
 [user]
 default=$username
 EOF
+fi
+
+# Ensure interop section exists in wsl.conf (for existing files too)
+if ! grep -q '^\[interop\]' /etc/wsl.conf; then
+    printf '\n[interop]\nenabled=true\nappendWindowsPath=true\n' >> /etc/wsl.conf
 fi
 
 # Ensure shell starts in home directory (not /mnt/c/Users/...)
@@ -125,16 +134,30 @@ fi
 
 echo ""
 info "User '$username' is ready."
-echo ""
-read -rp "Import SSH keys from another WSL instance now? [Y/n] " import_ssh < /dev/tty
 
-if [[ ! "$import_ssh" =~ ^[Nn]$ ]]; then
-    # Download and run as the new user with tty access
-    tmpscript=$(mktemp)
-    curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh > "$tmpscript"
-    chmod +x "$tmpscript"
-    su - "$username" -c "bash $tmpscript" < /dev/tty
-    rm -f "$tmpscript"
+# Check if wsl.exe interop is available
+if command -v wsl.exe &>/dev/null; then
+    echo ""
+    read -rp "Import SSH keys from another WSL instance now? [Y/n] " import_ssh < /dev/tty
+
+    if [[ ! "$import_ssh" =~ ^[Nn]$ ]]; then
+        # Download and run as the new user with tty access
+        tmpscript=$(mktemp)
+        curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh > "$tmpscript"
+        chmod +x "$tmpscript"
+        su - "$username" -c "bash $tmpscript" < /dev/tty
+        rm -f "$tmpscript"
+    fi
+else
+    warn "Windows interop (wsl.exe) is not available in this session."
+    echo ""
+    echo "  To import SSH keys, restart this WSL instance first:"
+    echo ""
+    echo "    1. Exit this session (type 'exit' twice)"
+    echo "    2. From PowerShell: wsl --terminate ${WSL_DISTRO_NAME:-<distro>}"
+    echo "    3. Reopen: wsl -d ${WSL_DISTRO_NAME:-<distro>}"
+    echo "    4. Run: curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh | bash"
+    echo ""
 fi
 
 # ── Switch to new user ───────────────────────────────────────
