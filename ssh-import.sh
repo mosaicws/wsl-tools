@@ -67,10 +67,14 @@ while IFS= read -r distro; do
     [ -z "$distro" ] && continue
     [ "$distro" = "$current_distro" ] && continue
 
+    echo -n "  Checking $distro... " >&2
     if wsl.exe -d "$distro" -- test -f "/home/$USER/.ssh/id_ed25519" 2>/dev/null; then
         candidates+=("$distro")
         comment=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r' | awk '{print $3}') || comment=""
         menu_items+=("$distro" "${comment:-SSH key found}")
+        echo "found key" >&2
+    else
+        echo "no key" >&2
     fi
 done < <(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 | tr -d '\r' | sed '/^$/d')
 

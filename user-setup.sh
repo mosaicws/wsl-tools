@@ -145,7 +145,7 @@ if command -v wsl.exe &>/dev/null; then
         tmpscript=$(mktemp /tmp/ssh-import.XXXXXX)
         curl -fsSL https://raw.githubusercontent.com/mosaicws/wsl-tools/main/ssh-import.sh > "$tmpscript"
         chmod 755 "$tmpscript"
-        su - "$username" -c "bash $tmpscript" < /dev/tty
+        su - "$username" -c "script -qc 'bash $tmpscript' /dev/null" < /dev/tty
         rm -f "$tmpscript"
     fi
 else

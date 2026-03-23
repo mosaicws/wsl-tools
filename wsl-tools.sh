@@ -154,7 +154,8 @@ op_import_ssh() {
             tmpscript=$(mktemp /tmp/ssh-import.XXXXXX)
             curl -fsSL "$REPO_BASE/ssh-import.sh" > "$tmpscript"
             chmod 755 "$tmpscript"
-            su - "$target_user" -c "bash $tmpscript" < /dev/tty
+            # Use script to allocate a PTY so wsl.exe and whiptail work properly
+            su - "$target_user" -c "script -qc 'bash $tmpscript' /dev/null" < /dev/tty
             rm -f "$tmpscript"
         else
             error "No normal user account found. Create a user first (option 1)."
