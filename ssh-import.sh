@@ -85,7 +85,8 @@ while IFS= read -r distro; do
     fi
 
     echo -n "  Checking $distro... " >&2
-    pub=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" 2>/dev/null | tr -d '\r') || true
+    # stdin must be /dev/null — wsl.exe consumes stdin, which would eat remaining loop lines
+    pub=$(wsl.exe -d "$distro" -- cat "/home/$USER/.ssh/id_ed25519.pub" < /dev/null 2>/dev/null | tr -d '\r') || true
     if [ -n "$pub" ]; then
         candidates+=("$distro")
         comment=$(echo "$pub" | awk '{print $3}')
@@ -145,7 +146,7 @@ copy_remote_file() {
     local remote_path="$1" local_path="$2" perms="$3"
     local tmp
     tmp=$(mktemp "$SSH_DIR/.tmp.XXXXXX")
-    if wsl.exe -d "$selected" -- cat "$remote_path" 2>/dev/null | tr -d '\r' > "$tmp" && [ -s "$tmp" ]; then
+    if wsl.exe -d "$selected" -- cat "$remote_path" < /dev/null 2>/dev/null | tr -d '\r' > "$tmp" && [ -s "$tmp" ]; then
         mv "$tmp" "$local_path"
         chmod "$perms" "$local_path"
     else
