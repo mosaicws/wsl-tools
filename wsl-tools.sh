@@ -164,27 +164,30 @@ find_normal_user() {
 }
 
 op_import_ssh() {
-    local run_as=""
+    local target_user=""
+    local target_home=""
 
     if [ "$(id -u)" -eq 0 ]; then
-        run_as=$(find_normal_user)
-        if [ -z "$run_as" ]; then
+        target_user=$(find_normal_user)
+        if [ -z "$target_user" ]; then
             error "No normal user account found. Create a user first (option 1)."
             read -rp "Press ENTER to continue..." < /dev/tty
             return
         fi
-        debug "Will run SSH import as '$run_as'"
+        target_home=$(eval echo "~$target_user")
+        debug "Will import SSH keys for '$target_user' (home=$target_home)"
     fi
 
     local tmpscript
     tmpscript=$(mktemp /tmp/ssh-import.XXXXXX)
     download_script "ssh-import.sh" "$tmpscript"
 
-    if [ -n "$run_as" ]; then
-        info "Running SSH import as '$run_as'..."
-        debug "Executing: su - $run_as -c 'bash $tmpscript'"
-        # Run with explicit tty access for interactive prompts
-        su "$run_as" -c "bash $tmpscript" < /dev/tty > /dev/tty 2>&1
+    if [ -n "$target_user" ]; then
+        info "Importing SSH keys for '$target_user'..."
+        # Run as root but with target user's HOME/USER so keys go to the right place
+        HOME="$target_home" USER="$target_user" bash "$tmpscript"
+        # Fix ownership — root created the files
+        chown -R "$target_user:$target_user" "$target_home/.ssh" 2>/dev/null || true
     else
         bash "$tmpscript"
     fi

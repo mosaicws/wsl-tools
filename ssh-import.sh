@@ -14,6 +14,15 @@ set -euo pipefail
 SSH_DIR="$HOME/.ssh"
 SSH_KEY="$SSH_DIR/id_ed25519"
 
+# ── TTY handling ─────────────────────────────────────────────
+# When run via curl|bash or su -c, /dev/tty may not exist.
+# Detect and use the right input source for interactive prompts.
+if [ -e /dev/tty ]; then
+    TTY_IN=/dev/tty
+else
+    TTY_IN=/dev/stdin
+fi
+
 # ── Colours ──────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -38,7 +47,7 @@ if [ -f "$SSH_KEY" ]; then
     echo ""
     ssh-keygen -lf "$SSH_KEY.pub" 2>/dev/null || true
     echo ""
-    read -rp "Overwrite with a key from another WSL instance? [y/N] " overwrite < /dev/tty
+    read -rp "Overwrite with a key from another WSL instance? [y/N] " overwrite < "$TTY_IN"
     if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
         info "Keeping existing key. Nothing to do."
         exit 0
@@ -113,7 +122,7 @@ else
         echo "  $((i+1))) ${candidates[$i]}  (${menu_items[$((i*2+1))]})"
     done
     echo ""
-    read -rp "Select [1-${#candidates[@]}]: " choice < /dev/tty
+    read -rp "Select [1-${#candidates[@]}]: " choice < "$TTY_IN"
     if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#candidates[@]} ]; then
         error "Invalid selection."
         exit 1
@@ -131,7 +140,7 @@ echo "Public key: $pub_key"
 echo "Target:     $SSH_DIR/"
 echo ""
 
-read -rp "Proceed? [Y/n] " confirm < /dev/tty
+read -rp "Proceed? [Y/n] " confirm < "$TTY_IN"
 if [[ "$confirm" =~ ^[Nn]$ ]]; then
     warn "Import cancelled."
     exit 1
