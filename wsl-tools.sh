@@ -40,7 +40,7 @@ run_remote_script() {
     info "Downloading $script..."
     curl -fsSL "$REPO_BASE/$script" > "$tmpfile"
     chmod +x "$tmpfile"
-    bash "$tmpfile"
+    WSL_TOOLS_MENU=1 bash "$tmpfile"
     rm -f "$tmpfile"
 }
 
@@ -117,12 +117,49 @@ op_create_user() {
         return
     fi
     run_remote_script "user-setup.sh"
+
+    # After user creation, offer to switch
+    local default_user
+    default_user=$(grep '^default=' /etc/wsl.conf 2>/dev/null | cut -d= -f2) || true
+    if [ -n "$default_user" ] && [ "$default_user" != "root" ] && id "$default_user" &>/dev/null; then
+        echo ""
+        read -rp "Switch to '$default_user' now? [Y/n] " switch_user < /dev/tty
+        if [[ ! "$switch_user" =~ ^[Nn]$ ]]; then
+            info "Switching to '$default_user'..."
+            exec su - "$default_user" -c "bash /tmp/wsl-tools.sh" < /dev/tty
+        fi
+    fi
+}
+
+# Find a non-root user to run commands as
+find_normal_user() {
+    # Check wsl.conf default user first
+    local default_user
+    default_user=$(grep '^default=' /etc/wsl.conf 2>/dev/null | cut -d= -f2) || true
+    if [ -n "$default_user" ] && [ "$default_user" != "root" ] && id "$default_user" &>/dev/null; then
+        echo "$default_user"
+        return
+    fi
+    # Fall back to first user with uid >= 1000
+    awk -F: '$3 >= 1000 && $3 < 65534 {print $1; exit}' /etc/passwd
 }
 
 op_import_ssh() {
     if [ "$(id -u)" -eq 0 ]; then
-        warn "SSH import should be run as your normal user, not root."
-        read -rp "Press ENTER to continue..." < /dev/tty
+        local target_user
+        target_user=$(find_normal_user)
+        if [ -n "$target_user" ]; then
+            info "Running SSH import as '$target_user'..."
+            local tmpscript
+            tmpscript=$(mktemp)
+            curl -fsSL "$REPO_BASE/ssh-import.sh" > "$tmpscript"
+            chmod +x "$tmpscript"
+            su - "$target_user" -c "bash $tmpscript" < /dev/tty
+            rm -f "$tmpscript"
+        else
+            error "No normal user account found. Create a user first (option 1)."
+            read -rp "Press ENTER to continue..." < /dev/tty
+        fi
         return
     fi
     run_remote_script "ssh-import.sh"

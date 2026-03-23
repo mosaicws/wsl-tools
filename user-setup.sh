@@ -160,8 +160,11 @@ else
     echo ""
 fi
 
-# ── Switch to new user ───────────────────────────────────────
+# ── Switch to new user (only when run standalone) ────────────
 
-echo ""
-info "Switching to '$username'..."
-exec su - "$username"
+# If called from wsl-tools.sh menu, just return — the menu handles switching
+if [ -z "${WSL_TOOLS_MENU:-}" ]; then
+    echo ""
+    info "Switching to '$username'..."
+    exec su - "$username"
+fi
