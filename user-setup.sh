@@ -115,6 +115,9 @@ if ! grep -q 'cd ~' "/home/$username/.bashrc" 2>/dev/null; then
 if [ "$(pwd)" = "/" ] || echo "$(pwd)" | grep -q '^/mnt/'; then
     cd ~
 fi
+
+# Aliases
+alias cls='clear'
 BASHRC
     chown "$username:$username" "/home/$username/.bashrc"
 fi
