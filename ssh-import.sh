@@ -51,7 +51,11 @@ menu_items=()
 declare -A pub_keys
 
 while IFS= read -r distro; do
-    [ -z "$distro" ] || [ "$distro" = "$current_distro" ] && continue
+    if [ -z "$distro" ]; then continue; fi
+    if [ "$distro" = "$current_distro" ]; then
+        echo "  Skipping $distro (current instance)" >&2
+        continue
+    fi
 
     echo -n "  Checking $distro... " >&2
     # Single call: test existence and read pub key in one shot
